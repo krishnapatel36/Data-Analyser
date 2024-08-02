@@ -5,71 +5,28 @@ from datetime import datetime
 import re
 from fpdf import FPDF
 import base64
+import requests
 
 # Function to process data
 def process_data(data):
-    file_path1 = 'city.xlsx'
-    city = pd.read_excel(file_path1)
-    city['city'] = city['Unnamed: 1'].astype(str) + ' (IN )'
-    df = pd.DataFrame(city['city'])
-    df1 = pd.DataFrame(city['Unnamed: 2'])
+    def get_state_from_ip(ip_address, api_key):
+        url = f"https://ipinfo.io/{ip_address}/json?token={api_key}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('region', 'Unknown')
+        else:
+            return 'Unknown'
+    api_key = '7837dcaf59814e'  # Replace with your actual IPInfo API key
 
-    combined_df = pd.concat([df, df1], axis=1)
-    city_state_dict = pd.Series(combined_df['Unnamed: 2'].values, index=combined_df['city']).to_dict()
-    city_state_dict = {key.upper(): value for key, value in city_state_dict.items()}
-
-    new_entries = {
-        'ANDAMAN AND NICOBAR ISLANDS (IN )': 'Andaman & Nicobar Islands',
-        'ANDHRA PRADESH (IN )': 'Andhra Pradesh',
-        'ARUNACHAL PRADESH (IN )': 'Arunachal Pradesh',
-        'ASSAM (IN )': 'Assam',
-        'BIHAR (IN )': 'Bihar',
-        'CHANDIGARH (IN )': 'Chandigarh',
-        'CHHATTISGARH (IN )': 'Chhattisgarh',
-        'DADRA AND NAGAR HAVELI AND DAMAN AND DIU (IN )': 'Dadra & Nagar Haveli and Daman & Diu',
-        'DELHI (IN )': 'Delhi',
-        'GOA (IN )': 'Goa',
-        'GUJARAT (IN )': 'Gujarat',
-        'HARYANA (IN )': 'Haryana',
-        'HIMACHAL PRADESH (IN )': 'Himachal Pradesh',
-        'JAMMU AND KASHMIR (IN )': 'Jammu & Kashmir',
-        'JHARKHAND (IN )': 'Jharkhand',
-        'KARNATAKA (IN )': 'Karnataka',
-        'KERALA (IN )': 'Kerala',
-        'LADAKH (IN )': 'Ladakh',
-        'LAKSHADWEEP (IN )': 'Lakshadweep',
-        'MADHYA PRADESH (IN )': 'Madhya Pradesh',
-        'MAHARASHTRA (IN )': 'Maharashtra',
-        'MANIPUR (IN )': 'Manipur',
-        'MEGHALAYA (IN )': 'Meghalaya',
-        'MIZORAM (IN )': 'Mizoram',
-        'NAGALAND (IN )': 'Nagaland',
-        'ODISHA (IN )': 'Odisha',
-        'PUDUCHERRY (IN )': 'Puducherry',
-        'PUNJAB (IN )': 'Punjab',
-        'RAJASTHAN (IN )': 'Rajasthan',
-        'SIKKIM (IN )': 'Sikkim',
-        'TAMIL NADU (IN )': 'Tamil Nadu',
-        'TELANGANA (IN )': 'Telangana',
-        'TRIPURA (IN )': 'Tripura',
-        'UTTAR PRADESH (IN )': 'Uttar Pradesh',
-        'UTTARAKHAND (IN )': 'Uttarakhand',
-        'WEST BENGAL (IN )': 'West Bengal',
-        'LŪNKARANSAR (IN )': 'Rajasthan',
-        'NEW DELHI (IN )': 'Delhi'
-    }
-    city_state_dict.update({key.upper(): value for key, value in new_entries.items()})
+    data['State'] = data['User Type'].apply(lambda ip: get_state_from_ip(ip, api_key))
+    state_counts = data['State'].value_counts()
 
     data['Archiving'] = pd.to_datetime(data['Archiving'], format='%H:%M:%S', errors='coerce')
-
     data = data.dropna(subset=['Archiving'])
 
     data['Archiving'] = data['Archiving'].dt.strftime('%I:%M:%S').str.lstrip('0')
 
-    data['Department'] = data['Department'].str.upper()
-    data['State'] = data.loc[3:, 'Department'].map(city_state_dict).fillna('Unknown')
-    state_counts = data['State'].value_counts()
-    
     if 'Phone' in data.columns:
         def extract_time(text):
             if isinstance(text, str):
@@ -104,10 +61,10 @@ def process_data(data):
         data['Unique IP'] = aggregated_data['Unique IP Add']
         data['Total Time Spend'] = aggregated_data['Total Time Spend']
 
-        min_diff = data['Total Time Spend'].min()
-        max_diff = data['Total Time Spend'].max()
-        bin_edges = list(range(int(min_diff), int(max_diff) + 10, 10))
-        data['Time Interval'] = pd.cut(data['Total Time Spend'], bins=bin_edges, right=False)
+        bin_edges = [0, 1, 5, 20, 40, 60, 80, float('inf')]
+        bin_labels = ['<1 min', '1-5 mins', '5-20 mins', '20-40 mins', '40-60 mins', '60-80 mins', '80+ mins']
+
+        data['Time Interval'] = pd.cut(data['Total Time Spend'], bins=bin_edges, labels=bin_labels, right=False)
         time_interval_counts = data['Time Interval'].value_counts().sort_index()
 
         return time_interval_counts, state_counts, aggregated_data
