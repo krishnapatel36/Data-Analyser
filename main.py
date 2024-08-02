@@ -60,6 +60,12 @@ def process_data(data):
     }
     city_state_dict.update({key.upper(): value for key, value in new_entries.items()})
 
+    data['Archiving'] = pd.to_datetime(data['Archiving'], format='%H:%M:%S', errors='coerce')
+
+    data = data.dropna(subset=['Archiving'])
+
+    data['Archiving'] = data['Archiving'].dt.strftime('%I:%M:%S').str.lstrip('0')
+
     data['Department'] = data['Department'].str.upper()
     data['State'] = data.loc[3:, 'Department'].map(city_state_dict).fillna('Unknown')
     state_counts = data['State'].value_counts()
@@ -145,7 +151,6 @@ if uploaded_file:
     time_interval_counts, state_counts, aggregated_data = process_data(data)
     
     if time_interval_counts is not None:
-        # Display graph
         fig, ax = plt.subplots()
         time_interval_counts_df = time_interval_counts.reset_index()
         time_interval_counts_df.columns = ['Time Interval', 'Count']
@@ -159,8 +164,8 @@ if uploaded_file:
         st.image('graph.png', caption='Time Interval Distribution')
 
         # Display time interval counts as table
-        st.write("Summary of Time Intervals:")
-        st.dataframe(time_interval_counts_df)
+        # st.write("Summary of Time Intervals:")
+        # st.dataframe(time_interval_counts_df)
 
         # Display state counts as table
         st.write("Summary of State Counts:")
