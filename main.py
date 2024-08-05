@@ -3,12 +3,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 import re
+import requests
 from fpdf import FPDF
 import base64
-import requests
 
 # Function to process data
 def process_data(data):
+    def standardize_time(time_str):
+        if 'AM' in time_str or 'PM' in time_str:
+            return pd.to_datetime(time_str, format='%I:%M:%S %p', errors='coerce')
+        else:
+            return pd.to_datetime(time_str, format='%H:%M:%S', errors='coerce')
+
     def get_state_from_ip(ip_address, api_key):
         url = f"https://ipinfo.io/{ip_address}/json?token={api_key}"
         response = requests.get(url)
@@ -17,16 +23,15 @@ def process_data(data):
             return data.get('region', 'Unknown')
         else:
             return 'Unknown'
+
     api_key = '7837dcaf59814e'  # Replace with your actual IPInfo API key
+    unique_df = data.drop_duplicates(subset=['Meeting ID'])
+    unique_df['State'] = unique_df['User Type'].apply(lambda ip: get_state_from_ip(ip, api_key))
+    state_counts = unique_df['State'].value_counts()
 
-    data['State'] = data['User Type'].apply(lambda ip: get_state_from_ip(ip, api_key))
-    state_counts = data['State'].value_counts()
-
-    data['Archiving'] = pd.to_datetime(data['Archiving'], format='%H:%M:%S', errors='coerce')
+    data['Archiving'] = data['Archiving'].apply(lambda x: standardize_time(str(x)))
     data = data.dropna(subset=['Archiving'])
-
     data['Archiving'] = data['Archiving'].dt.strftime('%I:%M:%S').str.lstrip('0')
-
     if 'Phone' in data.columns:
         def extract_time(text):
             if isinstance(text, str):
@@ -36,12 +41,23 @@ def process_data(data):
             return None
 
         data['Phone'] = data['Phone'].astype(str)
-        data['Extracted Time'] = data['Phone'].apply(extract_time)
-        data['Extracted Time'] = data['Extracted Time'].apply(lambda x: x.split()[0] if isinstance(x, str) else x)
-        data['Archiving'] = data['Archiving'].apply(lambda x: x.split()[0] if isinstance(x, str) else x)
+        sliced_data = data.loc[3:].copy()
+        sliced_data['Extracted Time'] = sliced_data['Phone'].apply(extract_time)
+        data.loc[3:, 'Extracted Time'] = sliced_data['Extracted Time'].values
+
+        def remove_am_pm(time_str):
+            if isinstance(time_str, str):
+                return time_str.split()[0]
+            return time_str
+
+        data['Extracted Time'] = data['Extracted Time'].apply(remove_am_pm)
+        print(data['Archiving'])
+        print(data['Extracted Time'])
+        data['Archiving'] = data['Archiving'].apply(remove_am_pm)
         data['Archiving'] = pd.to_datetime(data['Archiving'], format='%H:%M:%S', errors='coerce').dt.time
         data['Extracted Time'] = pd.to_datetime(data['Extracted Time'], format='%H:%M:%S', errors='coerce').dt.time
-
+        print(data['Archiving'])
+        print(data['Extracted Time'])
         def time_difference(row):
             time_format = '%H:%M:%S'
             try:
@@ -53,20 +69,22 @@ def process_data(data):
                 return None
 
         data['diff'] = data.apply(time_difference, axis=1)
+        data = data.iloc[0:].reset_index(drop=True)
         data['diff'] = pd.to_numeric(data['diff'], errors='coerce')
+        print(data['diff'])
 
         aggregated_data = data.groupby('User Type', as_index=False).agg({'diff': 'sum'})
         aggregated_data.columns = ['Unique IP Add', 'Total Time Spend']
 
         data['Unique IP'] = aggregated_data['Unique IP Add']
         data['Total Time Spend'] = aggregated_data['Total Time Spend']
-
+        print(data['Unique IP'])
+        print(data['Total Time Spend'])
         bin_edges = [0, 1, 5, 20, 40, 60, 80, float('inf')]
         bin_labels = ['<1 min', '1-5 mins', '5-20 mins', '20-40 mins', '40-60 mins', '60-80 mins', '80+ mins']
 
         data['Time Interval'] = pd.cut(data['Total Time Spend'], bins=bin_edges, labels=bin_labels, right=False)
         time_interval_counts = data['Time Interval'].value_counts().sort_index()
-
         return time_interval_counts, state_counts, aggregated_data
     else:
         st.error("The 'Phone' column is missing in the uploaded file.")
@@ -108,23 +126,20 @@ if uploaded_file:
     time_interval_counts, state_counts, aggregated_data = process_data(data)
     
     if time_interval_counts is not None:
-        fig, ax = plt.subplots()
+        # Plotting the graph
+        fig, ax = plt.subplots(figsize=(10, 6))
         time_interval_counts_df = time_interval_counts.reset_index()
         time_interval_counts_df.columns = ['Time Interval', 'Count']
-        ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'])
-        plt.xticks(rotation=90)
-        plt.xlabel('Time Interval')
+        ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'], color='skyblue')
+        plt.xticks(rotation=45)
+        plt.xlabel('Time Interval (minutes)')
         plt.ylabel('Count')
-        plt.title('Time Interval Distribution')
+        plt.title('Count of Participation in Different Time Intervals')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
         plt.savefig('graph.png')
         st.image('graph.png', caption='Time Interval Distribution')
 
-        # Display time interval counts as table
-        # st.write("Summary of Time Intervals:")
-        # st.dataframe(time_interval_counts_df)
-
-        # Display state counts as table
         st.write("Summary of State Counts:")
         st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
 
