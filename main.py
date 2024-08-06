@@ -36,8 +36,12 @@ def process_data(data, medium):
         relevant_states = ["Telangana", "Andhra Pradesh", "Manipur", "Mizoram", "Tripura"]
 
     filtered_state_counts = state_counts[state_counts.index.isin(relevant_states)]
-    other_state_count = state_counts[~state_counts.index.isin(relevant_states)].sum()
-    filtered_state_counts['Other States'] = other_state_count
+    other_states_df = state_counts[~state_counts.index.isin(relevant_states)].reset_index()
+    other_states_df.columns = ['State', 'Count']
+    other_states_df = pd.concat([
+        other_states_df,
+        pd.DataFrame({'State': ['Other States'], 'Count': [other_states_df['Count'].sum()]})
+    ], ignore_index=True)
 
     data['Archiving'] = data['Archiving'].apply(lambda x: standardize_time(str(x)))
     data = data.dropna(subset=['Archiving'])
@@ -61,13 +65,10 @@ def process_data(data, medium):
             return time_str
 
         data['Extracted Time'] = data['Extracted Time'].apply(remove_am_pm)
-        print(data['Archiving'])
-        print(data['Extracted Time'])
         data['Archiving'] = data['Archiving'].apply(remove_am_pm)
         data['Archiving'] = pd.to_datetime(data['Archiving'], format='%H:%M:%S', errors='coerce').dt.time
         data['Extracted Time'] = pd.to_datetime(data['Extracted Time'], format='%H:%M:%S', errors='coerce').dt.time
-        print(data['Archiving'])
-        print(data['Extracted Time'])
+
         def time_difference(row):
             time_format = '%H:%M:%S'
             try:
@@ -81,46 +82,49 @@ def process_data(data, medium):
         data['diff'] = data.apply(time_difference, axis=1)
         data = data.iloc[0:].reset_index(drop=True)
         data['diff'] = pd.to_numeric(data['diff'], errors='coerce')
-        print(data['diff'])
 
         aggregated_data = data.groupby('User Type', as_index=False).agg({'diff': 'sum'})
         aggregated_data.columns = ['Unique IP Add', 'Total Time Spend']
 
         data['Unique IP'] = aggregated_data['Unique IP Add']
         data['Total Time Spend'] = aggregated_data['Total Time Spend']
-        print(data['Unique IP'])
-        print(data['Total Time Spend'])
         bin_edges = [0, 1, 5, 20, 40, 60, 80, float('inf')]
         bin_labels = ['<1 min', '1-5 mins', '5-20 mins', '20-40 mins', '40-60 mins', '60-80 mins', '80+ mins']
 
         data['Time Interval'] = pd.cut(data['Total Time Spend'], bins=bin_edges, labels=bin_labels, right=False)
         time_interval_counts = data['Time Interval'].value_counts().sort_index()
-        return time_interval_counts, filtered_state_counts, aggregated_data
+        return time_interval_counts, filtered_state_counts, aggregated_data, other_states_df
     else:
         st.error("The 'Phone' column is missing in the uploaded file.")
-        return None, None, None
+        return None, None, None, None
+
 
 # Function to create PDF
-def create_pdf(state_counts, time_interval_counts_df, aggregated_data_df):
+def create_pdf(state_counts, time_interval_counts_df, aggregated_data_df, other_states_df):
     pdf = FPDF()
     pdf.add_page()
     
-    pdf.set_font("Arial", size = 12)
+    pdf.set_font("Arial", size=12)
     
-    pdf.cell(200, 10, txt = "Data Analysis Report", ln = True, align = 'C')
+    pdf.cell(200, 10, txt="Data Analysis Report", ln=True, align='C')
     
     pdf.ln(10)
-    pdf.cell(200, 10, txt = "State Counts", ln = True)
+    pdf.cell(200, 10, txt="State Counts", ln=True)
     for state, count in state_counts.items():
-        pdf.cell(200, 10, txt = f"{state}: {count}", ln = True)
+        pdf.cell(200, 10, txt=f"{state}: {count}", ln=True)
     
     pdf.ln(10)
-    pdf.cell(200, 10, txt = "Time Interval Counts", ln = True)
+    pdf.cell(200, 10, txt="Other States", ln=True)
+    for index, row in other_states_df.iterrows():
+        pdf.cell(200, 10, txt=f"{row['State']}: {row['Count']}", ln=True)
+    
+    pdf.ln(10)
+    pdf.cell(200, 10, txt="Time Interval Counts", ln=True)
     for index, row in time_interval_counts_df.iterrows():
-        pdf.cell(200, 10, txt = f"{row['Time Interval']}: {row['Count']}", ln = True)
+        pdf.cell(200, 10, txt=f"{row['Time Interval']}: {row['Count']}", ln=True)
     
     pdf.add_page()
-    pdf.image('graph.png',50,50,110)
+    pdf.image('graph.png', 50, 50, 110)
     
     pdf_file_path = "data_analysis_report.pdf"
     pdf.output(pdf_file_path)
@@ -135,7 +139,7 @@ uploaded_file = st.file_uploader("Upload data.xlsx", type="xlsx")
 
 if uploaded_file:
     data = pd.read_excel(uploaded_file)
-    time_interval_counts, state_counts, aggregated_data = process_data(data, medium)
+    time_interval_counts, state_counts, aggregated_data, other_states_df = process_data(data, medium)
     
     if time_interval_counts is not None:
         # Plotting the graph
@@ -155,8 +159,11 @@ if uploaded_file:
         st.write("Summary of State Counts:")
         st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
 
+        st.write("Other States:")
+        st.dataframe(other_states_df)
+
         # Generate and provide PDF download
-        pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data)
+        pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data, other_states_df)
         
         with open(pdf_file_path, "rb") as f:
             pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
