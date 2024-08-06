@@ -8,7 +8,7 @@ from fpdf import FPDF
 import base64
 
 # Function to process data
-def process_data(data):
+def process_data(data, medium):
     def standardize_time(time_str):
         if 'AM' in time_str or 'PM' in time_str:
             return pd.to_datetime(time_str, format='%I:%M:%S %p', errors='coerce')
@@ -28,6 +28,16 @@ def process_data(data):
     unique_df = data.drop_duplicates(subset=['Meeting ID'])
     unique_df['State'] = unique_df['User Type'].apply(lambda ip: get_state_from_ip(ip, api_key))
     state_counts = unique_df['State'].value_counts()
+
+    # Filter states based on medium
+    if medium == 'Hindi Medium':
+        relevant_states = ["Gujarat", "Uttar Pradesh", "Rajasthan", "Haryana", "Himachal Pradesh", "Jharkhand", "Madhya Pradesh"]
+    else:
+        relevant_states = ["Telangana", "Andhra Pradesh", "Manipur", "Mizoram", "Tripura"]
+
+    filtered_state_counts = state_counts[state_counts.index.isin(relevant_states)]
+    other_state_count = state_counts[~state_counts.index.isin(relevant_states)].sum()
+    filtered_state_counts['Other States'] = other_state_count
 
     data['Archiving'] = data['Archiving'].apply(lambda x: standardize_time(str(x)))
     data = data.dropna(subset=['Archiving'])
@@ -85,7 +95,7 @@ def process_data(data):
 
         data['Time Interval'] = pd.cut(data['Total Time Spend'], bins=bin_edges, labels=bin_labels, right=False)
         time_interval_counts = data['Time Interval'].value_counts().sort_index()
-        return time_interval_counts, state_counts, aggregated_data
+        return time_interval_counts, filtered_state_counts, aggregated_data
     else:
         st.error("The 'Phone' column is missing in the uploaded file.")
         return None, None, None
@@ -119,11 +129,13 @@ def create_pdf(state_counts, time_interval_counts_df, aggregated_data_df):
 # Streamlit app
 st.title('Data Analysis and Report Generation')
 
+medium = st.selectbox("Select Medium", ["Hindi Medium", "English Medium"])
+
 uploaded_file = st.file_uploader("Upload data.xlsx", type="xlsx")
 
 if uploaded_file:
     data = pd.read_excel(uploaded_file)
-    time_interval_counts, state_counts, aggregated_data = process_data(data)
+    time_interval_counts, state_counts, aggregated_data = process_data(data, medium)
     
     if time_interval_counts is not None:
         # Plotting the graph
