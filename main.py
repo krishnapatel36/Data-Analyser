@@ -392,11 +392,11 @@ def process_data(data, medium):
         attendees = filtered_state_counts.get(state, 0)
         csv_data.append({
             'State': state,
-            'Language': medium,
-            'Week': '1',  # This could be dynamic depending on your data
-            'Session No.': '1',  # This could be dynamic
-            'Session Name': 'Session A',  # This could be dynamic
-            'Date': '2024-09-12',  # You can adjust this date dynamically
+            'Language': '',
+            'Week': '',  # This could be dynamic depending on your data
+            'Session No.': '',  # This could be dynamic
+            'Session Name': '',  # This could be dynamic
+            'Date': '',  # You can adjust this date dynamically
             'KGBVS who attended': attendees
         })
 
