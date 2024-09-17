@@ -38,7 +38,7 @@ def process_data(data, medium):
     filtered_state_counts = state_counts[state_counts.index.isin(relevant_states)]
     other_states_df = state_counts[~state_counts.index.isin(relevant_states)].reset_index()
     other_states_df.columns = ['State', 'Count']
-    other_states_df = pd.concat([ 
+    other_states_df = pd.concat([
         other_states_df,
         pd.DataFrame({'State': ['Other States'], 'Count': [other_states_df['Count'].sum()]}),
     ], ignore_index=True)
@@ -55,7 +55,7 @@ def process_data(data, medium):
             return None
 
         data['Phone'] = data['Phone'].astype(str)
-        sliced_data = data.loc[3:].copy()
+        sliced_data = data.iloc[3:].copy()  # Use iloc for positional indexing
         sliced_data['Extracted Time'] = sliced_data['Phone'].apply(extract_time)
         data.loc[3:, 'Extracted Time'] = sliced_data['Extracted Time'].values
 
@@ -80,7 +80,7 @@ def process_data(data, medium):
                 return None
 
         data['diff'] = data.apply(time_difference, axis=1)
-        data = data.iloc[0:].reset_index(drop=True)
+        data = data.reset_index(drop=True)
         data['diff'] = pd.to_numeric(data['diff'], errors='coerce')
 
         aggregated_data = data.groupby('User Type', as_index=False).agg({'diff': 'sum'})
@@ -97,7 +97,6 @@ def process_data(data, medium):
     else:
         st.error("The 'Phone' column is missing in the uploaded file.")
         return None, None, None, None
-
 
 # Function to create PDF
 def create_pdf(state_counts, time_interval_counts_df, aggregated_data_df, other_states_df):
