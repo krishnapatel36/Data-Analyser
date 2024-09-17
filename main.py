@@ -40,7 +40,7 @@ def process_data(data, medium):
     other_states_df.columns = ['State', 'Count']
     other_states_df = pd.concat([
         other_states_df,
-        pd.DataFrame({'State': ['Other States'], 'Count': [other_states_df['Count'].sum()]}),
+        pd.DataFrame({'State': ['Other States'], 'Count': [other_states_df['Count'].sum()]})
     ], ignore_index=True)
 
     data['Archiving'] = data['Archiving'].apply(lambda x: standardize_time(str(x)))
@@ -55,7 +55,7 @@ def process_data(data, medium):
             return None
 
         data['Phone'] = data['Phone'].astype(str)
-        sliced_data = data.iloc[3:].copy()  # Use iloc for positional indexing
+        sliced_data = data.loc[3:].copy()
         sliced_data['Extracted Time'] = sliced_data['Phone'].apply(extract_time)
         data.loc[3:, 'Extracted Time'] = sliced_data['Extracted Time'].values
 
@@ -80,7 +80,7 @@ def process_data(data, medium):
                 return None
 
         data['diff'] = data.apply(time_difference, axis=1)
-        data = data.reset_index(drop=True)
+        data = data.iloc[0:].reset_index(drop=True)
         data['diff'] = pd.to_numeric(data['diff'], errors='coerce')
 
         aggregated_data = data.groupby('User Type', as_index=False).agg({'diff': 'sum'})
@@ -98,33 +98,34 @@ def process_data(data, medium):
         st.error("The 'Phone' column is missing in the uploaded file.")
         return None, None, None, None
 
+
 # Function to create PDF
 def create_pdf(state_counts, time_interval_counts_df, aggregated_data_df, other_states_df):
     pdf = FPDF()
     pdf.add_page()
-
+    
     pdf.set_font("Arial", size=12)
-
+    
     pdf.cell(200, 10, txt="Data Analysis Report", ln=True, align='C')
-
+    
     pdf.ln(10)
     pdf.cell(200, 10, txt="State Counts", ln=True)
     for state, count in state_counts.items():
         pdf.cell(200, 10, txt=f"{state}: {count}", ln=True)
-
+    
     pdf.ln(10)
     pdf.cell(200, 10, txt="Other States", ln=True)
     for index, row in other_states_df.iterrows():
         pdf.cell(200, 10, txt=f"{row['State']}: {row['Count']}", ln=True)
-
+    
     pdf.ln(10)
     pdf.cell(200, 10, txt="Time Interval Counts", ln=True)
     for index, row in time_interval_counts_df.iterrows():
         pdf.cell(200, 10, txt=f"{row['Time Interval']}: {row['Count']}", ln=True)
-
+    
     pdf.add_page()
     pdf.image('graph.png', 50, 50, 110)
-
+    
     pdf_file_path = "data_analysis_report.pdf"
     pdf.output(pdf_file_path)
     return pdf_file_path
@@ -134,49 +135,36 @@ st.title('Data Analysis and Report Generation')
 
 medium = st.selectbox("Select Medium", ["Hindi Medium", "English Medium"])
 
-uploaded_file = st.file_uploader("Upload data file", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Upload data.xlsx", type="xlsx")
 
 if uploaded_file:
-    try:
-        if uploaded_file.name.endswith('.xlsx'):
-            data = pd.read_excel(uploaded_file)
-        elif uploaded_file.name.endswith('.csv'):
-            data = pd.read_csv(uploaded_file, encoding='utf-8', error_bad_lines=False)
-        else:
-            st.error("Unsupported file format. Please upload an Excel (.xlsx) or CSV (.csv) file.")
-            data = None
+    data = pd.read_excel(uploaded_file)
+    time_interval_counts, state_counts, aggregated_data, other_states_df = process_data(data, medium)
+    
+    if time_interval_counts is not None:
+        # Plotting the graph
+        fig, ax = plt.subplots(figsize=(10, 6))
+        time_interval_counts_df = time_interval_counts.reset_index()
+        time_interval_counts_df.columns = ['Time Interval', 'Count']
+        ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'], color='skyblue')
+        plt.xticks(rotation=45)
+        plt.xlabel('Time Interval (minutes)')
+        plt.ylabel('Count')
+        plt.title('Count of Participation in Different Time Intervals')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.savefig('graph.png')
+        st.image('graph.png', caption='Time Interval Distribution')
 
-        if data is not None:
-            time_interval_counts, state_counts, aggregated_data, other_states_df = process_data(data, medium)
-            
-            if time_interval_counts is not None:
-                # Plotting the graph
-                fig, ax = plt.subplots(figsize=(10, 6))
-                time_interval_counts_df = time_interval_counts.reset_index()
-                time_interval_counts_df.columns = ['Time Interval', 'Count']
-                ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'], color='skyblue')
-                plt.xticks(rotation=45)
-                plt.xlabel('Time Interval (minutes)')
-                plt.ylabel('Count')
-                plt.title('Count of Participation in Different Time Intervals')
-                plt.grid(axis='y', linestyle='--', alpha=0.7)
-                plt.tight_layout()
-                plt.savefig('graph.png')
-                st.image('graph.png', caption='Time Interval Distribution')
+        st.write("Summary of State Counts:")
+        st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
 
-                st.write("Summary of State Counts:")
-                st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
+        st.write("Other States:")
+        st.dataframe(other_states_df)
 
-                st.write("Other States:")
-                st.dataframe(other_states_df)
-
-                # Generate and provide PDF download
-                pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data, other_states_df)
-                
-                with open(pdf_file_path, "rb") as f:
-                    pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
-                    st.markdown(f'<a href="data:application/pdf;base64,{pdf_base64}" download="{pdf_file_path}">Download PDF Report</a>', unsafe_allow_html=True)
-            else:
-                st.error("Error processing data. Please check the file content and format.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+        # Generate and provide PDF download
+        pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data, other_states_df)
+        
+        with open(pdf_file_path, "rb") as f:
+            pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
+            st.markdown(f'<a href="data:application/pdf;base64,{pdf_base64}" download="{pdf_file_path}">Download PDF Report</a>', unsafe_allow_html=True)
