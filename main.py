@@ -6,6 +6,7 @@ import re
 import requests
 from fpdf import FPDF
 import base64
+import io
 
 # Function to process data
 def process_data(data, medium):
@@ -138,37 +139,42 @@ medium = st.selectbox("Select Medium", ["Hindi Medium", "English Medium"])
 uploaded_file = st.file_uploader("Upload data file", type=["xlsx", "csv"])
 
 if uploaded_file:
-    if uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    file_extension = uploaded_file.name.split('.')[-1]
+    if file_extension == "xlsx":
         data = pd.read_excel(uploaded_file)
-    elif uploaded_file.type == "text/csv":
+    elif file_extension == "csv":
         data = pd.read_csv(uploaded_file)
+    else:
+        st.error("Unsupported file type. Please upload an XLSX or CSV file.")
+        data = None
     
-    time_interval_counts, state_counts, aggregated_data, other_states_df = process_data(data, medium)
-    
-    if time_interval_counts is not None:
-        # Plotting the graph
-        fig, ax = plt.subplots(figsize=(10, 6))
-        time_interval_counts_df = time_interval_counts.reset_index()
-        time_interval_counts_df.columns = ['Time Interval', 'Count']
-        ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'], color='skyblue')
-        plt.xticks(rotation=45)
-        plt.xlabel('Time Interval (minutes)')
-        plt.ylabel('Count')
-        plt.title('Count of Participation in Different Time Intervals')
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        plt.savefig('graph.png')
-        st.image('graph.png', caption='Time Interval Distribution')
-
-        st.write("Summary of State Counts:")
-        st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
-
-        st.write("Other States:")
-        st.dataframe(other_states_df)
-
-        # Generate and provide PDF download
-        pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data, other_states_df)
+    if data is not None:
+        time_interval_counts, state_counts, aggregated_data, other_states_df = process_data(data, medium)
         
-        with open(pdf_file_path, "rb") as f:
-            pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
-            st.markdown(f'<a href="data:application/pdf;base64,{pdf_base64}" download="{pdf_file_path}">Download PDF Report</a>', unsafe_allow_html=True)
+        if time_interval_counts is not None:
+            # Plotting the graph
+            fig, ax = plt.subplots(figsize=(10, 6))
+            time_interval_counts_df = time_interval_counts.reset_index()
+            time_interval_counts_df.columns = ['Time Interval', 'Count']
+            ax.bar(time_interval_counts_df['Time Interval'].astype(str), time_interval_counts_df['Count'], color='skyblue')
+            plt.xticks(rotation=45)
+            plt.xlabel('Time Interval (minutes)')
+            plt.ylabel('Count')
+            plt.title('Count of Participation in Different Time Intervals')
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            plt.savefig('graph.png')
+            st.image('graph.png', caption='Time Interval Distribution')
+
+            st.write("Summary of State Counts:")
+            st.dataframe(state_counts.reset_index().rename(columns={'index': 'State', 'State': 'Count'}))
+
+            st.write("Other States:")
+            st.dataframe(other_states_df)
+
+            # Generate and provide PDF download
+            pdf_file_path = create_pdf(state_counts, time_interval_counts_df, aggregated_data, other_states_df)
+            
+            with open(pdf_file_path, "rb") as f:
+                pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
+                st.markdown(f'<a href="data:application/pdf;base64,{pdf_base64}" download="{pdf_file_path}">Download PDF Report</a>', unsafe_allow_html=True)
